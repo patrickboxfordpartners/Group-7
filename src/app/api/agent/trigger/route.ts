@@ -8,10 +8,11 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
 
     const businessId = body.businessId || 'demo-business';
-    const businessName =
+    const businessName = (
       body.businessName ||
       process.env.DEFAULT_BUSINESS_NAME ||
-      'Demo Real Estate Group';
+      'Demo Real Estate Group'
+    ).trim();
     const placeId = body.placeId || process.env.DEFAULT_PLACE_ID || '';
 
     // Await the full pipeline — required on serverless (Vercel)
