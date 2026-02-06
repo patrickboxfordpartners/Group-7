@@ -74,47 +74,22 @@ export async function sendIntercomMessage(
   }
 
   const userContactId = await ensureContact();
-  const adminId = (process.env.INTERCOM_ADMIN_ID || '').trim();
 
-  // Create a conversation from the contact, then reply as admin.
-  // This makes the message visible in the Intercom Messenger widget.
-
-  // Step 1: Create conversation from the contact
+  // Create a conversation with the full alert content.
+  // This shows up directly in the Intercom Messenger and admin inbox.
   const convoRes = await fetch('https://api.intercom.io/conversations', {
     method: 'POST',
     headers: headers(),
     body: JSON.stringify({
       from: { type: 'user', id: userContactId },
-      body: 'New review detected — agent alert incoming.',
+      body: data.body,
     }),
   });
 
   if (!convoRes.ok) {
     const text = await convoRes.text().catch(() => '');
-    throw new Error(`Intercom conversation creation failed (${convoRes.status}): ${text}`);
+    throw new Error(`Intercom conversation failed (${convoRes.status}): ${text}`);
   }
 
-  const convo = await convoRes.json();
-
-  // Step 2: Reply as admin with the actual alert
-  const replyRes = await fetch(
-    `https://api.intercom.io/conversations/${convo.conversation_id || convo.id}/reply`,
-    {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({
-        message_type: 'comment',
-        type: 'admin',
-        admin_id: adminId,
-        body: data.body,
-      }),
-    }
-  );
-
-  if (!replyRes.ok) {
-    const text = await replyRes.text().catch(() => '');
-    throw new Error(`Intercom reply failed (${replyRes.status}): ${text}`);
-  }
-
-  return replyRes.json();
+  return convoRes.json();
 }
