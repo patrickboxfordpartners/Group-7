@@ -336,8 +336,21 @@ export default function Dashboard() {
   }, [fetchData]);
 
   const applyState = (data: { events?: CredibilityEvent[]; logs?: LogEntry[]; score?: typeof score }) => {
-    if (data.events) setEvents(data.events);
-    if (data.logs) setLogs(data.logs);
+    if (data.events) {
+      // Merge new events with existing (dedup by ID) so events accumulate on serverless
+      setEvents((prev) => {
+        const existingIds = new Set(prev.map((e) => e.id));
+        const newEvents = data.events!.filter((e) => !existingIds.has(e.id));
+        return [...newEvents, ...prev];
+      });
+    }
+    if (data.logs) {
+      setLogs((prev) => {
+        const existingMsgs = new Set(prev.map((l) => l.timestamp + l.message));
+        const newLogs = data.logs!.filter((l) => !existingMsgs.has(l.timestamp + l.message));
+        return [...newLogs, ...prev];
+      });
+    }
     if (data.score) setScore(data.score);
   };
 
@@ -359,7 +372,10 @@ export default function Dashboard() {
   const resetAgent = async () => {
     const res = await fetch('/api/agent/reset', { method: 'POST' });
     const data = await res.json();
-    applyState(data);
+    // Hard reset — clear all client state
+    setEvents([]);
+    setLogs(data.logs || []);
+    setScore(data.score || { current: 87, history: [] });
   };
 
   const submitFeedback = async (
