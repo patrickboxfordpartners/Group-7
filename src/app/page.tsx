@@ -306,9 +306,23 @@ export default function Dashboard() {
     try {
       const res = await fetch('/api/agent/events');
       const data = await res.json();
-      setEvents(data.events || []);
-      setLogs(data.logs || []);
-      setScore(data.score || { current: 87, history: [] });
+      // On serverless, polling may hit a different instance with empty state.
+      // Only apply polled data if it has at least as many events as we already have.
+      setEvents((prev) => {
+        const polled = data.events || [];
+        return polled.length >= prev.length ? polled : prev;
+      });
+      setLogs((prev) => {
+        const polled = data.logs || [];
+        return polled.length >= prev.length ? polled : prev;
+      });
+      if (data.score) {
+        setScore((prev) => {
+          return (data.score.history?.length || 0) >= (prev.history?.length || 0)
+            ? data.score
+            : prev;
+        });
+      }
       if (data.integrations) setIntegrations(data.integrations);
     } catch {
       // Silently retry on next poll
