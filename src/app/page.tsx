@@ -301,6 +301,7 @@ export default function Dashboard() {
   });
   const [scanning, setScanning] = useState(false);
   const [expandedEvent, setExpandedEvent] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -354,6 +355,11 @@ export default function Dashboard() {
     if (data.score) setScore(data.score);
   };
 
+  const showToast = (message: string, type: string = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 5000);
+  };
+
   const triggerScan = async () => {
     setScanning(true);
     try {
@@ -364,6 +370,16 @@ export default function Dashboard() {
       });
       const data = await res.json();
       applyState(data);
+
+      // Show toast for Intercom notification
+      if (data.events?.[0]?.actionsTaken) {
+        const intercomAction = data.events[0].actionsTaken.find(
+          (a: { type: string; details: Record<string, unknown> }) => a.type === 'intercom_alert'
+        );
+        if (intercomAction?.details?.status === 'sent') {
+          showToast('Intercom: Alert sent to operator', 'intercom');
+        }
+      }
     } finally {
       setScanning(false);
     }
@@ -455,6 +471,32 @@ export default function Dashboard() {
           </div>
         </div>
       </header>
+
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 animate-slide-in">
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-xl border ${
+            toast.type === 'intercom'
+              ? 'bg-blue-950 border-blue-500/30 text-blue-100'
+              : 'bg-gray-900 border-gray-700 text-gray-100'
+          }`}>
+            {toast.type === 'intercom' && (
+              <svg className="w-5 h-5 text-blue-400 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2.546 20.2A1.5 1.5 0 003.8 21.454l3.032-.892A9.96 9.96 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm-3 8a1 1 0 110-2 1 1 0 010 2zm3 0a1 1 0 110-2 1 1 0 010 2zm3 0a1 1 0 110-2 1 1 0 010 2z"/>
+              </svg>
+            )}
+            <div>
+              <p className="text-sm font-medium">{toast.message}</p>
+              <p className="text-xs text-gray-400 mt-0.5">Check Intercom inbox for details</p>
+            </div>
+            <button onClick={() => setToast(null)} className="text-gray-500 hover:text-gray-300 ml-2">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="flex h-[calc(100vh-57px)]">
         {/* Left Panel — Score + Controls */}
