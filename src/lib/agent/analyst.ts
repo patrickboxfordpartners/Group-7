@@ -1,6 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk';
-
-const anthropic = new Anthropic();
+// Groq API — OpenAI-compatible, fast inference
+// Free tier at console.groq.com
 
 export interface AnalysisResult {
   classification: {
@@ -39,13 +38,7 @@ ${feedbackHistory
 Adjust your tone and approach based on these signals.`
       : '';
 
-  const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 600,
-    messages: [
-      {
-        role: 'user',
-        content: `You are a credibility intelligence agent analyzing a customer review for "${businessName}".
+  const prompt = `You are a credibility intelligence agent analyzing a customer review for "${businessName}".
 
 Review details:
 - Author: ${review.author}
@@ -63,18 +56,39 @@ Analyze this review and respond with ONLY valid JSON (no markdown, no code fence
   },
   "draftedResponse": "<professional, empathetic response to post as a reply to this review, 2-3 sentences>",
   "reasoning": "<one sentence explaining your analysis>"
-}`,
-      },
-    ],
+}`;
+
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    throw new Error('GROQ_API_KEY not set in environment variables');
+  }
+
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 600,
+      temperature: 0.3,
+    }),
   });
 
-  const text =
-    message.content[0].type === 'text' ? message.content[0].text : '';
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Groq API request failed (${res.status}): ${errText}`);
+  }
+
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content || '';
 
   try {
     return JSON.parse(text) as AnalysisResult;
   } catch {
-    // Fallback if Claude returns markdown-wrapped JSON
+    // Fallback if model returns markdown-wrapped JSON
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]) as AnalysisResult;

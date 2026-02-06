@@ -1,5 +1,5 @@
 // In-memory store for hackathon demo
-// Swap for Supabase/Neon in production
+// Uses globalThis to persist across Next.js dev mode hot reloads
 
 export interface CredibilityEvent {
   id: string;
@@ -39,17 +39,34 @@ interface FeedbackEntry {
   modified?: string;
 }
 
-// --- State ---
-let events: CredibilityEvent[] = [];
-let currentScore = 87;
-let scoreHistory: Array<{ score: number; timestamp: string }> = [
-  { score: 92, timestamp: new Date(Date.now() - 7200000).toISOString() },
-  { score: 90, timestamp: new Date(Date.now() - 3600000).toISOString() },
-  { score: 87, timestamp: new Date().toISOString() },
-];
-let agentLog: LogEntry[] = [];
-let feedbackLog: FeedbackEntry[] = [];
-let scanCount = 0;
+interface Store {
+  events: CredibilityEvent[];
+  currentScore: number;
+  scoreHistory: Array<{ score: number; timestamp: string }>;
+  agentLog: LogEntry[];
+  feedbackLog: FeedbackEntry[];
+  scanCount: number;
+}
+
+// Persist store on globalThis so it survives Next.js hot reloads
+const g = globalThis as unknown as { __store?: Store };
+
+if (!g.__store) {
+  g.__store = {
+    events: [],
+    currentScore: 87,
+    scoreHistory: [
+      { score: 92, timestamp: new Date(Date.now() - 7200000).toISOString() },
+      { score: 90, timestamp: new Date(Date.now() - 3600000).toISOString() },
+      { score: 87, timestamp: new Date().toISOString() },
+    ],
+    agentLog: [],
+    feedbackLog: [],
+    scanCount: 0,
+  };
+}
+
+const store = g.__store;
 
 // --- Events ---
 export function addEvent(
@@ -62,42 +79,42 @@ export function addEvent(
     actionsTaken: [],
     status: 'detected',
   };
-  events.unshift(event);
+  store.events.unshift(event);
   return event;
 }
 
 export function updateEvent(id: string, updates: Partial<CredibilityEvent>) {
-  const idx = events.findIndex((e) => e.id === id);
+  const idx = store.events.findIndex((e) => e.id === id);
   if (idx !== -1) {
-    events[idx] = { ...events[idx], ...updates };
+    store.events[idx] = { ...store.events[idx], ...updates };
   }
-  return events[idx];
+  return store.events[idx];
 }
 
 export function getEvents() {
-  return events;
+  return store.events;
 }
 
 export function getEvent(id: string) {
-  return events.find((e) => e.id === id);
+  return store.events.find((e) => e.id === id);
 }
 
 // --- Score ---
 export function getScore() {
-  return { current: currentScore, history: scoreHistory };
+  return { current: store.currentScore, history: store.scoreHistory };
 }
 
 export function updateScore(delta: number) {
-  currentScore = Math.max(0, Math.min(100, currentScore + delta));
-  scoreHistory.push({
-    score: currentScore,
+  store.currentScore = Math.max(0, Math.min(100, store.currentScore + delta));
+  store.scoreHistory.push({
+    score: store.currentScore,
     timestamp: new Date().toISOString(),
   });
 }
 
 // --- Logs ---
 export function log(message: string, type: string = 'info') {
-  agentLog.unshift({
+  store.agentLog.unshift({
     message,
     timestamp: new Date().toISOString(),
     type,
@@ -105,7 +122,7 @@ export function log(message: string, type: string = 'info') {
 }
 
 export function getLogs() {
-  return agentLog;
+  return store.agentLog;
 }
 
 // --- Feedback / Learning ---
@@ -115,14 +132,28 @@ export function addFeedback(
   original: string,
   modified?: string
 ) {
-  feedbackLog.push({ eventId, feedback, original, modified });
+  store.feedbackLog.push({ eventId, feedback, original, modified });
 }
 
 export function getFeedbackHistory() {
-  return feedbackLog;
+  return store.feedbackLog;
 }
 
 // --- Scan Counter (for seed data rotation) ---
 export function nextScanIndex() {
-  return scanCount++;
+  return store.scanCount++;
+}
+
+// --- Reset (for clean demo starts) ---
+export function resetStore() {
+  store.events = [];
+  store.currentScore = 87;
+  store.scoreHistory = [
+    { score: 92, timestamp: new Date(Date.now() - 7200000).toISOString() },
+    { score: 90, timestamp: new Date(Date.now() - 3600000).toISOString() },
+    { score: 87, timestamp: new Date().toISOString() },
+  ];
+  store.agentLog = [];
+  store.feedbackLog = [];
+  store.scanCount = 0;
 }

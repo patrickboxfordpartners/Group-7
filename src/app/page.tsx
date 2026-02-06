@@ -110,6 +110,11 @@ export default function Dashboard() {
     }
   };
 
+  const resetAgent = async () => {
+    await fetch('/api/agent/reset', { method: 'POST' });
+    await fetchData();
+  };
+
   const submitFeedback = async (
     eventId: string,
     feedback: 'accepted' | 'rejected'
@@ -192,6 +197,14 @@ export default function Dashboard() {
             ) : (
               'Scan Now'
             )}
+          </button>
+
+          {/* Reset Button */}
+          <button
+            onClick={resetAgent}
+            className="w-full py-2 px-4 rounded-lg font-medium text-xs text-gray-500 border border-gray-800 hover:border-gray-600 hover:text-gray-300 transition-all"
+          >
+            Reset Demo
           </button>
 
           {/* Quick Stats */}
