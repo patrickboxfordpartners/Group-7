@@ -44,6 +44,14 @@ async function ensureContact(): Promise<string> {
 
   if (!createRes.ok) {
     const text = await createRes.text().catch(() => '');
+    // Handle 409 conflict — contact already exists, extract ID from error
+    if (createRes.status === 409) {
+      const match = text.match(/id=([a-f0-9]+)/);
+      if (match) {
+        contactId = match[1];
+        return contactId!;
+      }
+    }
     throw new Error(`Intercom contact creation failed (${createRes.status}): ${text}`);
   }
 
