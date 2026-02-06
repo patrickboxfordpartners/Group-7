@@ -22,26 +22,35 @@ export async function scoutBusiness(
   placeId: string,
   businessName: string
 ): Promise<ScoutResult> {
-  // Priority 1: Pre-loaded Apify dataset (instant, best for demo)
+  // Try Apify for business profile data, fall back to seed reviews if none found
+  let apifyProfile: ScoutResult['profileData'] | undefined;
+
   if (process.env.APIFY_DATASET_ID) {
     try {
-      return await fetchApifyDataset(process.env.APIFY_DATASET_ID);
+      const result = await fetchApifyDataset(process.env.APIFY_DATASET_ID);
+      apifyProfile = result.profileData;
+      if (result.reviews.length > 0) return result;
     } catch (e) {
       console.error('[Scout] Dataset fetch failed:', e);
     }
   }
 
-  // Priority 2: Live Apify actor run (slower, real data)
-  if (process.env.APIFY_API_TOKEN && placeId) {
+  if (process.env.APIFY_API_TOKEN && placeId && !apifyProfile) {
     try {
-      return await runApifyActor(placeId);
+      const result = await runApifyActor(placeId);
+      apifyProfile = result.profileData;
+      if (result.reviews.length > 0) return result;
     } catch (e) {
       console.error('[Scout] Apify actor failed:', e);
     }
   }
 
-  // Priority 3: Seed data (always works)
-  return seedScout(businessName);
+  // Seed reviews with real profile data from Apify if available
+  const seed = seedScout(businessName);
+  if (apifyProfile) {
+    seed.profileData = apifyProfile;
+  }
+  return seed;
 }
 
 async function fetchApifyDataset(datasetId: string): Promise<ScoutResult> {
