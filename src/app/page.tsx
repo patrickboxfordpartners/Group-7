@@ -321,20 +321,31 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
+  const applyState = (data: { events?: CredibilityEvent[]; logs?: LogEntry[]; score?: typeof score }) => {
+    if (data.events) setEvents(data.events);
+    if (data.logs) setLogs(data.logs);
+    if (data.score) setScore(data.score);
+  };
+
   const triggerScan = async () => {
     setScanning(true);
-    // Fire and don't await — the pipeline runs server-side
-    // and the polling loop will pick up intermediate states
-    fetch('/api/agent/trigger', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    }).finally(() => setScanning(false));
+    try {
+      const res = await fetch('/api/agent/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      applyState(data);
+    } finally {
+      setScanning(false);
+    }
   };
 
   const resetAgent = async () => {
-    await fetch('/api/agent/reset', { method: 'POST' });
-    await fetchData();
+    const res = await fetch('/api/agent/reset', { method: 'POST' });
+    const data = await res.json();
+    applyState(data);
   };
 
   const submitFeedback = async (

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { runAgentCycle } from '@/lib/agent/orchestrator';
+import { getEvents, getLogs, getScore } from '@/lib/store';
 
 export const maxDuration = 30;
 
@@ -19,7 +20,15 @@ export async function POST(req: Request) {
     // so the function stays alive until all actions complete
     await runAgentCycle(businessId, businessName, placeId);
 
-    return NextResponse.json({ triggered: true, businessName });
+    // Return full state so the dashboard can update directly
+    // (on Vercel, separate Lambda instances don't share memory)
+    return NextResponse.json({
+      triggered: true,
+      businessName,
+      events: getEvents(),
+      logs: getLogs(),
+      score: getScore(),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });
