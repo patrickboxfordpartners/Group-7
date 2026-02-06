@@ -122,18 +122,19 @@ async function runApifyActor(placeId: string): Promise<ScoutResult> {
 }
 
 function seedScout(businessName: string): ScoutResult {
+  // Ordered for demo flow: positive → negative → neutral → critical → good
   const seedReviews: ReviewFinding[] = [
-    {
-      author: 'Jane D.',
-      rating: 2,
-      text: 'Very slow to respond to my inquiries. I waited 3 days for a callback and when they finally reached out, the agent seemed unprepared. Would not recommend.',
-      publishedAt: new Date().toISOString(),
-      source: 'google',
-    },
     {
       author: 'Michael R.',
       rating: 5,
       text: 'Outstanding service from start to finish. Professional, knowledgeable, and always available when I had questions. Closed on my dream home in 3 weeks.',
+      publishedAt: new Date().toISOString(),
+      source: 'google',
+    },
+    {
+      author: 'Jane D.',
+      rating: 2,
+      text: 'Very slow to respond to my inquiries. I waited 3 days for a callback and when they finally reached out, the agent seemed unprepared. Would not recommend.',
       publishedAt: new Date(Date.now() - 86400000).toISOString(),
       source: 'google',
     },
@@ -160,7 +161,10 @@ function seedScout(businessName: string): ScoutResult {
     },
   ];
 
-  const idx = nextScanIndex();
+  // Use random selection on serverless (scan counter resets per Lambda)
+  const idx = typeof globalThis !== 'undefined' && (globalThis as Record<string, unknown>).__store
+    ? nextScanIndex()
+    : Math.floor(Math.random() * seedReviews.length);
   return {
     reviews: [seedReviews[idx % seedReviews.length]],
     profileData: {

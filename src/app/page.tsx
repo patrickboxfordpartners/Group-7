@@ -382,12 +382,18 @@ export default function Dashboard() {
     eventId: string,
     feedback: 'accepted' | 'rejected'
   ) => {
-    await fetch('/api/agent/feedback', {
+    // Update locally immediately so the UI responds
+    setEvents((prev) =>
+      prev.map((e) =>
+        e.id === eventId ? { ...e, humanFeedback: feedback } : e
+      )
+    );
+    // Fire API call in background (may not persist on serverless, but that's fine for demo)
+    fetch('/api/agent/feedback', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ eventId, feedback }),
-    });
-    await fetchData();
+    }).catch(() => {});
   };
 
   const previousScore =
