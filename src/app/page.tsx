@@ -302,6 +302,8 @@ export default function Dashboard() {
   const [scanning, setScanning] = useState(false);
   const [expandedEvent, setExpandedEvent] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
+  const [rejectingEvent, setRejectingEvent] = useState<string | null>(null);
+  const [rejectText, setRejectText] = useState('');
 
   const fetchData = useCallback(async () => {
     try {
@@ -396,19 +398,28 @@ export default function Dashboard() {
 
   const submitFeedback = async (
     eventId: string,
-    feedback: 'accepted' | 'rejected'
+    feedback: 'accepted' | 'rejected',
+    modifiedResponse?: string
   ) => {
     // Update locally immediately so the UI responds
     setEvents((prev) =>
       prev.map((e) =>
-        e.id === eventId ? { ...e, humanFeedback: feedback } : e
+        e.id === eventId
+          ? {
+              ...e,
+              humanFeedback: feedback,
+              ...(modifiedResponse ? { responseDrafted: modifiedResponse } : {}),
+            }
+          : e
       )
     );
-    // Fire API call in background (may not persist on serverless, but that's fine for demo)
+    setRejectingEvent(null);
+    setRejectText('');
+    // Fire API call in background
     fetch('/api/agent/feedback', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ eventId, feedback }),
+      body: JSON.stringify({ eventId, feedback, modifiedResponse }),
     }).catch(() => {});
   };
 
@@ -726,40 +737,71 @@ export default function Dashboard() {
                             </p>
 
                             {!event.humanFeedback ? (
-                              <div className="flex gap-2 mt-3">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    submitFeedback(event.id, 'accepted');
-                                  }}
-                                  className="text-xs px-3 py-1.5 bg-emerald-500/20 text-emerald-300 rounded-md hover:bg-emerald-500/30 transition-colors"
-                                >
-                                  Accept
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    submitFeedback(event.id, 'rejected');
-                                  }}
-                                  className="text-xs px-3 py-1.5 bg-red-500/20 text-red-300 rounded-md hover:bg-red-500/30 transition-colors"
-                                >
-                                  Reject
-                                </button>
-                              </div>
+                              rejectingEvent === event.id ? (
+                                <div className="mt-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+                                  <p className="text-xs text-gray-400">Write your preferred response:</p>
+                                  <textarea
+                                    value={rejectText}
+                                    onChange={(e) => setRejectText(e.target.value)}
+                                    placeholder="Type your response here..."
+                                    className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500 resize-none"
+                                    rows={3}
+                                    autoFocus
+                                  />
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => submitFeedback(event.id, 'rejected', rejectText || undefined)}
+                                      className="text-xs px-3 py-1.5 bg-red-500/20 text-red-300 rounded-md hover:bg-red-500/30 transition-colors"
+                                    >
+                                      {rejectText.trim() ? 'Submit Correction' : 'Reject Without Response'}
+                                    </button>
+                                    <button
+                                      onClick={() => { setRejectingEvent(null); setRejectText(''); }}
+                                      className="text-xs px-3 py-1.5 text-gray-500 hover:text-gray-300 transition-colors"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex gap-2 mt-3">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      submitFeedback(event.id, 'accepted');
+                                    }}
+                                    className="text-xs px-3 py-1.5 bg-emerald-500/20 text-emerald-300 rounded-md hover:bg-emerald-500/30 transition-colors"
+                                  >
+                                    Accept
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setRejectingEvent(event.id);
+                                      setRejectText(event.responseDrafted || '');
+                                    }}
+                                    className="text-xs px-3 py-1.5 bg-red-500/20 text-red-300 rounded-md hover:bg-red-500/30 transition-colors"
+                                  >
+                                    Reject &amp; Revise
+                                  </button>
+                                </div>
+                              )
                             ) : (
-                              <p className="text-xs text-gray-500 mt-3">
-                                Feedback:{' '}
-                                <span
-                                  className={
-                                    event.humanFeedback === 'accepted'
-                                      ? 'text-emerald-400'
-                                      : 'text-red-400'
-                                  }
-                                >
-                                  {event.humanFeedback}
-                                </span>{' '}
-                                &mdash; Agent learning updated
-                              </p>
+                              <div className="mt-3">
+                                <p className="text-xs text-gray-500">
+                                  Feedback:{' '}
+                                  <span
+                                    className={
+                                      event.humanFeedback === 'accepted'
+                                        ? 'text-emerald-400'
+                                        : 'text-red-400'
+                                    }
+                                  >
+                                    {event.humanFeedback}
+                                  </span>{' '}
+                                  &mdash; Agent learning updated
+                                </p>
+                              </div>
                             )}
                           </div>
                         )}
