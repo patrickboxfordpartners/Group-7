@@ -46,17 +46,11 @@ Review details:
 - Text: "${review.text}"
 ${feedbackContext}
 
-Analyze this review and respond with ONLY valid JSON (no markdown, no code fences):
-{
-  "classification": {
-    "sentiment": "positive" or "neutral" or "negative",
-    "themes": ["theme1", "theme2"],
-    "credibilityImpact": <integer from -20 to +10, negative reviews should be negative>,
-    "urgency": "low" or "medium" or "high"
-  },
-  "draftedResponse": "<professional, empathetic response to post as a reply to this review, 2-3 sentences>",
-  "reasoning": "<one sentence explaining your analysis>"
-}`;
+Analyze this review and respond with ONLY valid JSON (no markdown, no code fences, no trailing commas).
+IMPORTANT: Do NOT use quotation marks inside string values. Use single quotes or apostrophes instead.
+
+Example format:
+{"classification":{"sentiment":"negative","themes":["slow response","unprepared"],"credibilityImpact":-8,"urgency":"high"},"draftedResponse":"We sincerely apologize for your experience. We take response times seriously and are addressing this with our team. We would love the opportunity to make this right.","reasoning":"Negative review citing slow response and lack of preparation indicates service quality issues."}`;
 
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
@@ -85,14 +79,38 @@ Analyze this review and respond with ONLY valid JSON (no markdown, no code fence
   const data = await res.json();
   const text = data.choices?.[0]?.message?.content || '';
 
-  try {
-    return JSON.parse(text) as AnalysisResult;
-  } catch {
-    // Fallback if model returns markdown-wrapped JSON
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]) as AnalysisResult;
+  // Try parsing, with progressively more aggressive cleanup
+  const candidates = [
+    text,
+    text.match(/\{[\s\S]*\}/)?.[0],
+  ].filter(Boolean) as string[];
+
+  for (const raw of candidates) {
+    try {
+      return JSON.parse(raw) as AnalysisResult;
+    } catch {
+      // Try fixing common LLM JSON issues: trailing commas, unescaped quotes
+      try {
+        const fixed = raw
+          .replace(/,\s*}/g, '}')
+          .replace(/,\s*]/g, ']');
+        return JSON.parse(fixed) as AnalysisResult;
+      } catch {
+        continue;
+      }
     }
-    throw new Error(`Failed to parse analyst response: ${text.slice(0, 200)}`);
   }
+
+  // Last resort: return a safe default so the pipeline doesn't break
+  console.error('[Analyst] Failed to parse:', text.slice(0, 300));
+  return {
+    classification: {
+      sentiment: review.rating >= 4 ? 'positive' : review.rating <= 2 ? 'negative' : 'neutral',
+      themes: ['review'],
+      credibilityImpact: review.rating >= 4 ? 5 : review.rating <= 2 ? -8 : 0,
+      urgency: review.rating <= 2 ? 'high' : 'low',
+    },
+    draftedResponse: `Thank you for your feedback, ${review.author}. We appreciate you taking the time to share your experience and will use it to improve our service.`,
+    reasoning: 'Fallback classification based on star rating (LLM response was malformed).',
+  };
 }
