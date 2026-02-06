@@ -323,15 +323,13 @@ export default function Dashboard() {
 
   const triggerScan = async () => {
     setScanning(true);
-    try {
-      await fetch('/api/agent/trigger', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-    } finally {
-      setTimeout(() => setScanning(false), 1000);
-    }
+    // Fire and don't await — the pipeline runs server-side
+    // and the polling loop will pick up intermediate states
+    fetch('/api/agent/trigger', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }).finally(() => setScanning(false));
   };
 
   const resetAgent = async () => {

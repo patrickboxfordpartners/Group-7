@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { runAgentCycle } from '@/lib/agent/orchestrator';
 
+export const maxDuration = 30;
+
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -12,9 +14,9 @@ export async function POST(req: Request) {
       'Demo Real Estate Group';
     const placeId = body.placeId || process.env.DEFAULT_PLACE_ID || '';
 
-    // Run the full agent pipeline (scout → analyze → act)
-    // This runs async so the dashboard can poll for intermediate states
-    runAgentCycle(businessId, businessName, placeId).catch(console.error);
+    // Await the full pipeline — required on serverless (Vercel)
+    // so the function stays alive until all actions complete
+    await runAgentCycle(businessId, businessName, placeId);
 
     return NextResponse.json({ triggered: true, businessName });
   } catch (err) {
