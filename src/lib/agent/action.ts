@@ -52,8 +52,12 @@ export async function executeActions(
   // 2. Send Intercom notification
   try {
     const urgencyLabel = analysis.classification.urgency.toUpperCase();
+    const impactStr = `${analysis.classification.credibilityImpact > 0 ? '+' : ''}${analysis.classification.credibilityImpact}`;
+    const dashboardUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'https://hackathon-agent-ruddy.vercel.app';
     const result = await sendIntercomMessage({
-      body: `${urgencyLabel}: New ${review.rating}-star review from ${review.author}\n\n"${review.text}"\n\nDraft response ready. Credibility impact: ${analysis.classification.credibilityImpact > 0 ? '+' : ''}${analysis.classification.credibilityImpact} pts.`,
+      body: `<b>${urgencyLabel}: ${review.rating}-star review from ${review.author}</b><br><br>"${review.text}"<br><br><b>Credibility impact:</b> ${impactStr} pts<br><br><b>Drafted response:</b><br>${analysis.draftedResponse}<br><br><a href="${dashboardUrl}">Open dashboard to accept or reject →</a>`,
     });
     actions.push({
       type: 'intercom_alert',
