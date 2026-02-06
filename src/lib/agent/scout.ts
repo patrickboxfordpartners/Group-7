@@ -161,10 +161,7 @@ function seedScout(businessName: string): ScoutResult {
     },
   ];
 
-  // Use random selection on serverless (scan counter resets per Lambda)
-  const idx = typeof globalThis !== 'undefined' && (globalThis as Record<string, unknown>).__store
-    ? nextScanIndex()
-    : Math.floor(Math.random() * seedReviews.length);
+  const idx = Math.floor(Math.random() * seedReviews.length);
   return {
     reviews: [seedReviews[idx % seedReviews.length]],
     profileData: {
