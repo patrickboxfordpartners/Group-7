@@ -1,6 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { ScoreGauge, Sparkline } from '@/components/score-gauge';
+import { PipelineDiagram } from '@/components/pipeline-diagram';
+import { EventCard } from '@/components/event-card';
+import { AgentLog } from '@/components/agent-log';
+import { IntegrationPill } from '@/components/integration-pill';
 
 interface CredibilityEvent {
   id: string;
@@ -41,249 +46,6 @@ interface Integrations {
   sentry: boolean;
 }
 
-const severityStyles: Record<string, { border: string; dot: string }> = {
-  low: { border: 'border-blue-500/30 bg-blue-500/5', dot: 'bg-blue-400' },
-  medium: {
-    border: 'border-yellow-500/30 bg-yellow-500/5',
-    dot: 'bg-yellow-400',
-  },
-  high: {
-    border: 'border-orange-500/30 bg-orange-500/5',
-    dot: 'bg-orange-400',
-  },
-  critical: { border: 'border-red-500/30 bg-red-500/5', dot: 'bg-red-400' },
-};
-
-const statusLabels: Record<string, string> = {
-  detected: 'Detected',
-  analyzing: 'Analyzing...',
-  acting: 'Taking action...',
-  complete: 'Complete',
-  error: 'Error',
-};
-
-const actionLabels: Record<string, string> = {
-  crm_inbox: 'CRM Inbox',
-  crm_task: 'CRM Task',
-  intercom_alert: 'Intercom',
-  redpanda_event: 'Redpanda',
-};
-
-function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-}
-
-/* ---------- Score Gauge Ring ---------- */
-function ScoreGauge({ score }: { score: number }) {
-  const radius = 52;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (score / 100) * circumference;
-  const color =
-    score >= 80
-      ? 'text-emerald-400'
-      : score >= 60
-        ? 'text-yellow-400'
-        : 'text-red-400';
-  const glowColor =
-    score >= 80
-      ? 'rgba(16,185,129,0.12)'
-      : score >= 60
-        ? 'rgba(234,179,8,0.12)'
-        : 'rgba(239,68,68,0.12)';
-
-  return (
-    <div className="relative w-36 h-36 mx-auto">
-      <div
-        className="absolute inset-0 rounded-full"
-        style={{ background: `radial-gradient(circle, ${glowColor} 0%, transparent 70%)` }}
-      />
-      <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
-        <circle
-          cx="60"
-          cy="60"
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="8"
-          className="text-gray-800"
-        />
-        <circle
-          cx="60"
-          cy="60"
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="8"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          className={`${color} score-ring`}
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className={`text-4xl font-bold tabular-nums ${color}`}>
-          {score}
-        </span>
-        <span className="text-[10px] text-gray-500 uppercase tracking-wider mt-0.5">
-          Score
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/* ---------- Score Sparkline ---------- */
-function Sparkline({ history }: { history: Array<{ score: number }> }) {
-  if (history.length < 2) return null;
-  const min = Math.min(...history.map((h) => h.score)) - 5;
-  const max = Math.max(...history.map((h) => h.score)) + 5;
-  const range = max - min || 1;
-  const w = 200;
-  const h = 32;
-  const points = history
-    .map((pt, i) => {
-      const x = (i / (history.length - 1)) * w;
-      const y = h - ((pt.score - min) / range) * h;
-      return `${x},${y}`;
-    })
-    .join(' ');
-
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-8 mt-2 opacity-60">
-      <polyline
-        points={points}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        className="text-emerald-400"
-      />
-    </svg>
-  );
-}
-
-/* ---------- Star Rating ---------- */
-function Stars({ rating }: { rating: number }) {
-  return (
-    <span className="inline-flex gap-0.5">
-      {[1, 2, 3, 4, 5].map((i) => (
-        <svg
-          key={i}
-          className={`w-3.5 h-3.5 ${i <= rating ? 'text-yellow-400' : 'text-gray-700'}`}
-          fill="currentColor"
-          viewBox="0 0 20 20"
-        >
-          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-        </svg>
-      ))}
-    </span>
-  );
-}
-
-/* ---------- Pipeline Diagram ---------- */
-function PipelineDiagram({
-  activeStage,
-  integrations,
-}: {
-  activeStage: string | null;
-  integrations: Integrations;
-}) {
-  const stages = [
-    { id: 'scout', label: 'Scout', sub: 'Apify', connected: integrations.apify },
-    { id: 'analyst', label: 'Analyst', sub: 'Groq LLM', connected: integrations.groq },
-    { id: 'action', label: 'Actions', sub: 'CRM + Intercom + Redpanda', connected: true },
-  ];
-
-  return (
-    <div className="bg-gray-900/30 border border-gray-800 rounded-xl p-4 mb-4">
-      <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider mb-3">
-        Agent Pipeline
-      </p>
-      <div className="flex items-center gap-1">
-        {stages.map((stage, i) => (
-          <div key={stage.id} className="flex items-center flex-1">
-            <div
-              className={`flex-1 py-2 px-3 rounded-lg border text-center transition-all ${
-                activeStage === stage.id
-                  ? 'border-emerald-500/50 bg-emerald-500/10 shadow-lg shadow-emerald-500/5'
-                  : activeStage === 'complete' && stage.connected
-                    ? 'border-emerald-500/20 bg-emerald-500/5'
-                    : 'border-gray-700/50 bg-gray-800/30'
-              }`}
-            >
-              <p
-                className={`text-xs font-medium ${
-                  activeStage === stage.id ? 'text-emerald-300' : 'text-gray-300'
-                }`}
-              >
-                {stage.label}
-              </p>
-              <p className="text-[10px] text-gray-500 mt-0.5">{stage.sub}</p>
-            </div>
-            {i < stages.length - 1 && (
-              <div className="w-6 flex items-center justify-center relative">
-                <div className="w-full h-px bg-gray-700" />
-                {activeStage && (
-                  <div className="absolute w-1.5 h-1.5 rounded-full bg-emerald-400 animate-flow-right" />
-                )}
-                <svg
-                  className="absolute right-0 w-2 h-2 text-gray-600"
-                  fill="currentColor"
-                  viewBox="0 0 8 8"
-                >
-                  <path d="M0 0l4 4-4 4z" />
-                </svg>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-      {/* Feedback loop indicator */}
-      <div className="flex items-center justify-center mt-2 gap-2">
-        <div className="h-px w-12 bg-gray-800" />
-        <span className="text-[10px] text-gray-600">
-          Human Feedback Loop
-        </span>
-        <svg className="w-3 h-3 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.006 4.006 0 00-3.7 3.7c-.017.22-.032.441-.046.662M19.5 12l3-3m-3 3l-3-3m-12 3c0 1.232.046 2.453.138 3.662a4.006 4.006 0 003.7 3.7 48.656 48.656 0 007.324 0 4.006 4.006 0 003.7-3.7c.017-.22.032-.441.046-.662M4.5 12l3 3m-3-3l-3 3" />
-        </svg>
-        <div className="h-px w-12 bg-gray-800" />
-      </div>
-    </div>
-  );
-}
-
-/* ---------- Integration Status Pill ---------- */
-function IntegrationPill({
-  name,
-  connected,
-  lastStatus,
-}: {
-  name: string;
-  connected: boolean;
-  lastStatus?: 'ok' | 'failed' | 'skipped';
-}) {
-  const dotColor =
-    !connected
-      ? 'bg-gray-600'
-      : lastStatus === 'failed'
-        ? 'bg-amber-400'
-        : 'bg-emerald-400';
-
-  return (
-    <span className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-gray-800/50 border border-gray-700/50">
-      <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
-      <span className={connected ? 'text-gray-300' : 'text-gray-600'}>
-        {name}
-      </span>
-    </span>
-  );
-}
-
-/* ========== Main Dashboard ========== */
 export default function Dashboard() {
   const [events, setEvents] = useState<CredibilityEvent[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -301,16 +63,18 @@ export default function Dashboard() {
   });
   const [scanning, setScanning] = useState(false);
   const [expandedEvent, setExpandedEvent] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ message: string; type: string } | null>(null);
-  const [rejectingEvent, setRejectingEvent] = useState<string | null>(null);
-  const [rejectText, setRejectText] = useState('');
+  const [toast, setToast] = useState<{
+    message: string;
+    type: string;
+  } | null>(null);
+  const [initialLoad, setInitialLoad] = useState(true);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [showMobileLog, setShowMobileLog] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
       const res = await fetch('/api/agent/events');
       const data = await res.json();
-      // On serverless, polling may hit a different instance with empty state.
-      // Only apply polled data if it has at least as many events as we already have.
       setEvents((prev) => {
         const polled = data.events || [];
         return polled.length >= prev.length ? polled : prev;
@@ -329,6 +93,8 @@ export default function Dashboard() {
       if (data.integrations) setIntegrations(data.integrations);
     } catch {
       // Silently retry on next poll
+    } finally {
+      setInitialLoad(false);
     }
   }, []);
 
@@ -338,9 +104,12 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  const applyState = (data: { events?: CredibilityEvent[]; logs?: LogEntry[]; score?: typeof score }) => {
+  const applyState = (data: {
+    events?: CredibilityEvent[];
+    logs?: LogEntry[];
+    score?: typeof score;
+  }) => {
     if (data.events) {
-      // Merge new events with existing (dedup by ID) so events accumulate on serverless
       setEvents((prev) => {
         const existingIds = new Set(prev.map((e) => e.id));
         const newEvents = data.events!.filter((e) => !existingIds.has(e.id));
@@ -349,8 +118,12 @@ export default function Dashboard() {
     }
     if (data.logs) {
       setLogs((prev) => {
-        const existingMsgs = new Set(prev.map((l) => l.timestamp + l.message));
-        const newLogs = data.logs!.filter((l) => !existingMsgs.has(l.timestamp + l.message));
+        const existingMsgs = new Set(
+          prev.map((l) => l.timestamp + l.message)
+        );
+        const newLogs = data.logs!.filter(
+          (l) => !existingMsgs.has(l.timestamp + l.message)
+        );
         return [...newLogs, ...prev];
       });
     }
@@ -364,24 +137,34 @@ export default function Dashboard() {
 
   const triggerScan = async () => {
     setScanning(true);
+    setScanError(null);
     try {
       const res = await fetch('/api/agent/trigger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Scan failed (${res.status})`);
+      }
       const data = await res.json();
       applyState(data);
 
-      // Show toast for Intercom notification
       if (data.events?.[0]?.actionsTaken) {
         const intercomAction = data.events[0].actionsTaken.find(
-          (a: { type: string; details: Record<string, unknown> }) => a.type === 'intercom_alert'
+          (a: { type: string; details: Record<string, unknown> }) =>
+            a.type === 'intercom_alert'
         );
         if (intercomAction?.details?.status === 'sent') {
           showToast('Intercom: Alert sent to operator', 'intercom');
         }
       }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Scan failed unexpectedly';
+      setScanError(message);
+      showToast(message, 'error');
     } finally {
       setScanning(false);
     }
@@ -390,10 +173,10 @@ export default function Dashboard() {
   const resetAgent = async () => {
     const res = await fetch('/api/agent/reset', { method: 'POST' });
     const data = await res.json();
-    // Hard reset — clear all client state
     setEvents([]);
     setLogs(data.logs || []);
     setScore(data.score || { current: 87, history: [] });
+    setScanError(null);
   };
 
   const submitFeedback = async (
@@ -401,21 +184,19 @@ export default function Dashboard() {
     feedback: 'accepted' | 'rejected',
     modifiedResponse?: string
   ) => {
-    // Update locally immediately so the UI responds
     setEvents((prev) =>
       prev.map((e) =>
         e.id === eventId
           ? {
               ...e,
               humanFeedback: feedback,
-              ...(modifiedResponse ? { responseDrafted: modifiedResponse } : {}),
+              ...(modifiedResponse
+                ? { responseDrafted: modifiedResponse }
+                : {}),
             }
           : e
       )
     );
-    setRejectingEvent(null);
-    setRejectText('');
-    // Fire API call in background
     fetch('/api/agent/feedback', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -429,18 +210,17 @@ export default function Dashboard() {
       : score.current;
   const delta = score.current - previousScore;
 
-  // Determine which pipeline stage is active
-  const activeStage = events.length === 0
-    ? null
-    : events.some((e) => e.status === 'detected')
-      ? 'scout'
-      : events.some((e) => e.status === 'analyzing')
-        ? 'analyst'
-        : events.some((e) => e.status === 'acting')
-          ? 'action'
-          : 'complete';
+  const activeStage =
+    events.length === 0
+      ? null
+      : events.some((e) => e.status === 'detected')
+        ? 'scout'
+        : events.some((e) => e.status === 'analyzing')
+          ? 'analyst'
+          : events.some((e) => e.status === 'acting')
+            ? 'action'
+            : 'complete';
 
-  // Derive integration action statuses from events
   const getLastActionStatus = (actionType: string) => {
     for (const e of events) {
       const action = e.actionsTaken.find((a) => a.type === actionType);
@@ -454,443 +234,354 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
-      <header className="border-b border-gray-800 bg-gradient-to-r from-gray-950 via-gray-900 to-gray-950 px-6 py-3">
-        <div className="flex items-center justify-between">
+      <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-md">
+        <div className="flex items-center justify-between px-4 py-3 lg:px-6">
           <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold tracking-tight">
+            <h1 className="text-base font-semibold tracking-tight text-foreground lg:text-lg">
               Credibility Intelligence Agent
             </h1>
-            <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-400/10 px-2.5 py-1 rounded-full">
-              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-              Live
+            <span className="flex items-center gap-1.5 rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs font-medium text-emerald-400">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+              <span className="hidden sm:inline">Live</span>
             </span>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <IntegrationPill name="Apify" connected={integrations.apify} lastStatus={getLastActionStatus('crm_inbox') /* scout doesn't have action */} />
+            {/* Integration pills — hidden on mobile, visible on lg */}
+            <div className="hidden items-center gap-1.5 lg:flex">
+              <IntegrationPill
+                name="Apify"
+                connected={integrations.apify}
+                lastStatus={getLastActionStatus('crm_inbox')}
+              />
               <IntegrationPill name="Groq" connected={integrations.groq} />
-              <IntegrationPill name="CRM" connected={integrations.crm} lastStatus={getLastActionStatus('crm_inbox')} />
-              <IntegrationPill name="Intercom" connected={integrations.intercom} lastStatus={getLastActionStatus('intercom_alert')} />
-              <IntegrationPill name="Redpanda" connected={integrations.redpanda} lastStatus={getLastActionStatus('redpanda_event')} />
+              <IntegrationPill
+                name="CRM"
+                connected={integrations.crm}
+                lastStatus={getLastActionStatus('crm_inbox')}
+              />
+              <IntegrationPill
+                name="Intercom"
+                connected={integrations.intercom}
+                lastStatus={getLastActionStatus('intercom_alert')}
+              />
+              <IntegrationPill
+                name="Redpanda"
+                connected={integrations.redpanda}
+                lastStatus={getLastActionStatus('redpanda_event')}
+              />
               <IntegrationPill name="Sentry" connected={integrations.sentry} />
             </div>
-            <span className="text-sm text-gray-500 font-medium ml-2">
+            <span className="hidden text-sm font-medium text-muted-foreground lg:ml-2 lg:inline">
               Boxford Partners
             </span>
+            {/* Mobile log toggle */}
+            <button
+              onClick={() => setShowMobileLog(!showMobileLog)}
+              className="focus-ring rounded-md p-2 text-muted-foreground hover:text-foreground lg:hidden"
+              aria-label="Toggle agent log"
+            >
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12"
+                />
+              </svg>
+            </button>
           </div>
         </div>
       </header>
 
       {/* Toast notification */}
       {toast && (
-        <div className="fixed top-4 right-4 z-50 animate-slide-in">
-          <div className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-xl border ${
-            toast.type === 'intercom'
-              ? 'bg-blue-950 border-blue-500/30 text-blue-100'
-              : 'bg-gray-900 border-gray-700 text-gray-100'
-          }`}>
+        <div className="fixed right-4 top-16 z-50 animate-slide-in">
+          <div
+            role="alert"
+            className={`flex items-center gap-3 rounded-lg border px-4 py-3 shadow-xl ${
+              toast.type === 'intercom'
+                ? 'border-blue-500/30 bg-blue-950 text-blue-100'
+                : toast.type === 'error'
+                  ? 'border-red-500/30 bg-red-950 text-red-100'
+                  : 'border-border bg-card text-foreground'
+            }`}
+          >
             {toast.type === 'intercom' && (
-              <svg className="w-5 h-5 text-blue-400 shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2.546 20.2A1.5 1.5 0 003.8 21.454l3.032-.892A9.96 9.96 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm-3 8a1 1 0 110-2 1 1 0 010 2zm3 0a1 1 0 110-2 1 1 0 010 2zm3 0a1 1 0 110-2 1 1 0 010 2z"/>
+              <svg
+                className="h-5 w-5 shrink-0 text-blue-400"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2.546 20.2A1.5 1.5 0 003.8 21.454l3.032-.892A9.96 9.96 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm-3 8a1 1 0 110-2 1 1 0 010 2zm3 0a1 1 0 110-2 1 1 0 010 2zm3 0a1 1 0 110-2 1 1 0 010 2z" />
+              </svg>
+            )}
+            {toast.type === 'error' && (
+              <svg
+                className="h-5 w-5 shrink-0 text-red-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+                />
               </svg>
             )}
             <div>
               <p className="text-sm font-medium">{toast.message}</p>
-              <p className="text-xs text-gray-400 mt-0.5">Check Intercom inbox for details</p>
+              {toast.type === 'intercom' && (
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Check Intercom inbox for details
+                </p>
+              )}
             </div>
-            <button onClick={() => setToast(null)} className="text-gray-500 hover:text-gray-300 ml-2">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <button
+              onClick={() => setToast(null)}
+              className="ml-2 text-muted-foreground hover:text-foreground"
+              aria-label="Dismiss notification"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           </div>
         </div>
       )}
 
-      <main className="flex h-[calc(100vh-57px)]">
+      <main className="flex flex-col lg:flex-row lg:h-[calc(100vh-57px)]">
         {/* Left Panel — Score + Controls */}
-        <aside className="w-72 border-r border-gray-800 p-5 flex flex-col gap-5 shrink-0">
-          {/* Credibility Score Gauge */}
-          <div className="text-center">
-            <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider mb-2">
-              Credibility Score
-            </p>
-            <ScoreGauge score={score.current} />
-            {delta !== 0 && (
-              <p
-                className={`text-sm font-medium mt-1 ${delta > 0 ? 'text-emerald-400' : 'text-red-400'}`}
+        <aside className="shrink-0 border-b border-border p-5 lg:w-72 lg:border-b-0 lg:border-r lg:overflow-y-auto">
+          <div className="flex items-start gap-6 lg:flex-col lg:gap-5">
+            {/* Score gauge */}
+            <div className="text-center lg:w-full">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Credibility Score
+              </p>
+              <ScoreGauge score={score.current} />
+              {delta !== 0 && (
+                <p
+                  className={`mt-1 text-sm font-medium ${delta > 0 ? 'text-emerald-400' : 'text-red-400'}`}
+                >
+                  {delta > 0 ? '\u2191' : '\u2193'} {Math.abs(delta)} pts
+                </p>
+              )}
+              <Sparkline history={score.history} />
+            </div>
+
+            {/* Controls + Stats */}
+            <div className="flex flex-1 flex-col gap-3 lg:w-full">
+              {/* Scan Button */}
+              <button
+                onClick={triggerScan}
+                disabled={scanning}
+                className={`focus-ring w-full rounded-lg py-3 px-4 text-sm font-medium transition-all ${
+                  scanning
+                    ? 'cursor-not-allowed bg-secondary text-muted-foreground'
+                    : 'bg-primary text-primary-foreground shadow-lg shadow-emerald-500/20 hover:brightness-110 active:scale-[0.98]'
+                }`}
               >
-                {delta > 0 ? '\u2191' : '\u2193'} {Math.abs(delta)} pts
-              </p>
-            )}
-            <Sparkline history={score.history} />
-          </div>
+                {scanning ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground/40 border-t-foreground" />
+                    Scanning...
+                  </span>
+                ) : (
+                  'Scan Now'
+                )}
+              </button>
 
-          {/* Scan Button */}
-          <button
-            onClick={triggerScan}
-            disabled={scanning}
-            className={`w-full py-3 px-4 rounded-lg font-medium text-sm transition-all ${
-              scanning
-                ? 'bg-gray-800 text-gray-400 cursor-not-allowed'
-                : events.length === 0
-                  ? 'bg-emerald-500 text-white hover:bg-emerald-400 active:scale-[0.98] shadow-lg shadow-emerald-500/20'
-                  : 'bg-emerald-500 text-white hover:bg-emerald-400 active:scale-[0.98]'
-            }`}
-          >
-            {scanning ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="w-4 h-4 border-2 border-emerald-300/40 border-t-white rounded-full animate-spin" />
-                Scanning...
-              </span>
-            ) : (
-              'Scan Now'
-            )}
-          </button>
+              {/* Scan error */}
+              {scanError && (
+                <p className="text-xs text-red-400 animate-fade-in">
+                  {scanError}
+                </p>
+              )}
 
-          {/* Reset Button */}
-          <button
-            onClick={resetAgent}
-            className="w-full py-2 px-4 rounded-lg font-medium text-xs text-gray-500 border border-gray-800 hover:border-gray-600 hover:text-gray-300 transition-all"
-          >
-            Reset Demo
-          </button>
+              {/* Reset */}
+              <button
+                onClick={resetAgent}
+                className="focus-ring w-full rounded-lg border border-border py-2 px-4 text-xs font-medium text-muted-foreground transition-all hover:border-muted-foreground/30 hover:text-foreground"
+              >
+                Reset Demo
+              </button>
 
-          {/* Quick Stats */}
-          <div className="grid grid-cols-2 gap-2">
-            <div className="bg-gray-900 rounded-lg p-2.5">
-              <p className="text-[10px] text-gray-500">Events</p>
-              <p className="text-xl font-bold tabular-nums">{events.length}</p>
-            </div>
-            <div className="bg-gray-900 rounded-lg p-2.5">
-              <p className="text-[10px] text-gray-500">Actions</p>
-              <p className="text-xl font-bold tabular-nums">
-                {events.reduce((sum, e) => sum + e.actionsTaken.length, 0)}
-              </p>
-            </div>
-            <div className="bg-gray-900 rounded-lg p-2.5">
-              <p className="text-[10px] text-gray-500">Feedback</p>
-              <p className="text-xl font-bold tabular-nums">
-                {events.filter((e) => e.humanFeedback).length}
-              </p>
-            </div>
-            <div className="bg-gray-900 rounded-lg p-2.5">
-              <p className="text-[10px] text-gray-500">Learning</p>
-              <p className="text-lg font-bold tabular-nums text-emerald-400">
-                {events.filter((e) => e.humanFeedback).length > 0
-                  ? 'Active'
-                  : 'Idle'}
-              </p>
+              {/* Quick Stats */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-md bg-card p-2.5">
+                  <p className="text-[10px] text-muted-foreground">Events</p>
+                  <p className="text-xl font-bold tabular-nums text-foreground">
+                    {events.length}
+                  </p>
+                </div>
+                <div className="rounded-md bg-card p-2.5">
+                  <p className="text-[10px] text-muted-foreground">Actions</p>
+                  <p className="text-xl font-bold tabular-nums text-foreground">
+                    {events.reduce(
+                      (sum, e) => sum + e.actionsTaken.length,
+                      0
+                    )}
+                  </p>
+                </div>
+                <div className="rounded-md bg-card p-2.5">
+                  <p className="text-[10px] text-muted-foreground">Feedback</p>
+                  <p className="text-xl font-bold tabular-nums text-foreground">
+                    {events.filter((e) => e.humanFeedback).length}
+                  </p>
+                </div>
+                <div className="rounded-md bg-card p-2.5">
+                  <p className="text-[10px] text-muted-foreground">Learning</p>
+                  <p className="text-lg font-bold tabular-nums text-emerald-400">
+                    {events.filter((e) => e.humanFeedback).length > 0
+                      ? 'Active'
+                      : 'Idle'}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Powered by */}
-          <div className="mt-auto pt-4 border-t border-gray-800/50">
-            <p className="text-[10px] text-gray-700 text-center leading-relaxed">
-              Powered by Apify &middot; Groq &middot; Intercom &middot; Sentry &middot; Redpanda
+          {/* Powered by — hidden on mobile */}
+          <div className="mt-5 hidden border-t border-border/50 pt-4 lg:block">
+            <p className="text-center text-[10px] leading-relaxed text-muted-foreground/40">
+              Powered by Apify &middot; Groq &middot; Intercom &middot; Sentry
+              &middot; Redpanda
             </p>
           </div>
         </aside>
 
         {/* Center — Pipeline + Event Feed */}
-        <section className="flex-1 p-5 overflow-y-auto flex flex-col min-w-0">
-          {/* Pipeline Diagram */}
-          <PipelineDiagram activeStage={activeStage} integrations={integrations} />
+        <section className="min-w-0 flex-1 overflow-y-auto p-4 lg:p-5">
+          {/* Pipeline Diagram — hidden on small screens */}
+          <div className="hidden md:block">
+            <PipelineDiagram
+              activeStage={activeStage}
+              integrations={integrations}
+            />
+          </div>
 
-          <h2 className="text-[10px] font-medium text-gray-500 uppercase tracking-wider mb-3">
+          <h2 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Event Feed
           </h2>
 
-          {events.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-48 text-gray-600">
-              <svg
-                className="w-10 h-10 mb-2 opacity-20"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+          {initialLoad ? (
+            /* Loading skeleton */
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="skeleton-shimmer h-28 rounded-lg"
                 />
-              </svg>
-              <p className="text-sm">No events detected yet</p>
-              <p className="text-xs mt-1 text-gray-700">
+              ))}
+            </div>
+          ) : events.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
+                <svg
+                  className="h-8 w-8 text-muted-foreground/50"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                  />
+                </svg>
+              </div>
+              <p className="text-sm font-medium text-foreground/60">
+                No events detected yet
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground/50">
                 Click &quot;Scan Now&quot; to begin monitoring
               </p>
             </div>
           ) : (
             <div className="space-y-2">
-              {events.map((event) => {
-                const styles =
-                  severityStyles[event.severity] || severityStyles.low;
-                const isExpanded = expandedEvent === event.id;
-
-                return (
-                  <div
-                    key={event.id}
-                    className={`border rounded-lg p-4 transition-all cursor-pointer hover:border-gray-600 animate-slide-in ${styles.border}`}
-                    onClick={() =>
-                      setExpandedEvent(isExpanded ? null : event.id)
-                    }
-                  >
-                    {/* Header */}
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="relative shrink-0">
-                          <span
-                            className={`block w-2.5 h-2.5 rounded-full ${styles.dot}`}
-                          />
-                          {event.severity === 'critical' && (
-                            <span
-                              className={`absolute inset-0 w-2.5 h-2.5 rounded-full ${styles.dot} animate-ping`}
-                            />
-                          )}
-                        </span>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <Stars rating={event.rawData.rating} />
-                            <p className="font-medium text-sm">
-                              from {event.rawData.author || 'Unknown'}
-                            </p>
-                          </div>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            {event.source} &middot;{' '}
-                            {formatTime(event.detectedAt)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {event.classification && (
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                              event.classification.sentiment === 'negative'
-                                ? 'bg-red-500/20 text-red-300'
-                                : event.classification.sentiment === 'positive'
-                                  ? 'bg-emerald-500/20 text-emerald-300'
-                                  : 'bg-gray-500/20 text-gray-300'
-                            }`}
-                          >
-                            {event.classification.credibilityImpact > 0
-                              ? '+'
-                              : ''}
-                            {event.classification.credibilityImpact} pts
-                          </span>
-                        )}
-                        <span
-                          className={`text-xs font-medium ${
-                            event.status === 'complete'
-                              ? 'text-emerald-400'
-                              : event.status === 'error'
-                                ? 'text-red-400'
-                                : 'text-yellow-400 animate-pulse'
-                          }`}
-                        >
-                          {statusLabels[event.status] || event.status}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Review text preview */}
-                    <p className="text-sm text-gray-400 mt-2 ml-[1.375rem]">
-                      &ldquo;
-                      {event.rawData.text?.substring(0, 150)}
-                      {(event.rawData.text?.length || 0) > 150 ? '...' : ''}
-                      &rdquo;
-                    </p>
-
-                    {/* Expanded details */}
-                    {isExpanded && event.status === 'complete' && (
-                      <div className="mt-4 ml-[1.375rem] space-y-3">
-                        {/* Themes */}
-                        {event.classification &&
-                          event.classification.themes.length > 0 && (
-                            <div className="bg-gray-900/50 rounded-lg p-3">
-                              <p className="text-xs font-medium text-gray-500 mb-2">
-                                Detected Themes
-                              </p>
-                              <div className="flex flex-wrap gap-1.5">
-                                {event.classification.themes.map((theme, i) => (
-                                  <span
-                                    key={i}
-                                    className="text-xs bg-gray-800 text-gray-300 px-2 py-0.5 rounded"
-                                  >
-                                    {theme}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                        {/* Drafted Response */}
-                        {event.responseDrafted && (
-                          <div className="bg-gray-900/50 rounded-lg p-3">
-                            <p className="text-xs font-medium text-gray-500 mb-2">
-                              Drafted Response
-                            </p>
-                            <p className="text-sm text-gray-300 leading-relaxed">
-                              {event.responseDrafted}
-                            </p>
-
-                            {!event.humanFeedback ? (
-                              rejectingEvent === event.id ? (
-                                <div className="mt-3 space-y-2" onClick={(e) => e.stopPropagation()}>
-                                  <p className="text-xs text-gray-400">Write your preferred response:</p>
-                                  <textarea
-                                    value={rejectText}
-                                    onChange={(e) => setRejectText(e.target.value)}
-                                    placeholder="Type your response here..."
-                                    className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500 resize-none"
-                                    rows={3}
-                                    autoFocus
-                                  />
-                                  <div className="flex gap-2">
-                                    <button
-                                      onClick={() => submitFeedback(event.id, 'rejected', rejectText || undefined)}
-                                      className="text-xs px-3 py-1.5 bg-red-500/20 text-red-300 rounded-md hover:bg-red-500/30 transition-colors"
-                                    >
-                                      {rejectText.trim() ? 'Submit Correction' : 'Reject Without Response'}
-                                    </button>
-                                    <button
-                                      onClick={() => { setRejectingEvent(null); setRejectText(''); }}
-                                      className="text-xs px-3 py-1.5 text-gray-500 hover:text-gray-300 transition-colors"
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="flex gap-2 mt-3">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      submitFeedback(event.id, 'accepted');
-                                    }}
-                                    className="text-xs px-3 py-1.5 bg-emerald-500/20 text-emerald-300 rounded-md hover:bg-emerald-500/30 transition-colors"
-                                  >
-                                    Accept
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setRejectingEvent(event.id);
-                                      setRejectText(event.responseDrafted || '');
-                                    }}
-                                    className="text-xs px-3 py-1.5 bg-red-500/20 text-red-300 rounded-md hover:bg-red-500/30 transition-colors"
-                                  >
-                                    Reject &amp; Revise
-                                  </button>
-                                </div>
-                              )
-                            ) : (
-                              <div className="mt-3">
-                                <p className="text-xs text-gray-500">
-                                  Feedback:{' '}
-                                  <span
-                                    className={
-                                      event.humanFeedback === 'accepted'
-                                        ? 'text-emerald-400'
-                                        : 'text-red-400'
-                                    }
-                                  >
-                                    {event.humanFeedback}
-                                  </span>{' '}
-                                  &mdash; Agent learning updated
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Actions Taken */}
-                        {event.actionsTaken.length > 0 && (
-                          <div className="bg-gray-900/50 rounded-lg p-3">
-                            <p className="text-xs font-medium text-gray-500 mb-2">
-                              Actions Taken
-                            </p>
-                            <div className="space-y-1.5">
-                              {event.actionsTaken.map((action, i) => (
-                                <div
-                                  key={i}
-                                  className="flex items-center gap-2 text-xs"
-                                >
-                                  <span
-                                    className={
-                                      action.details.status === 'failed'
-                                        ? 'text-red-400'
-                                        : action.details.status === 'skipped'
-                                          ? 'text-gray-500'
-                                          : 'text-emerald-400'
-                                    }
-                                  >
-                                    {action.details.status === 'failed'
-                                      ? '\u2717'
-                                      : action.details.status === 'skipped'
-                                        ? '\u2013'
-                                        : '\u2713'}
-                                  </span>
-                                  <span className="text-gray-300">
-                                    {actionLabels[action.type] || action.type}
-                                  </span>
-                                  <span className="text-gray-600">
-                                    {formatTime(action.timestamp)}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              {events.map((event) => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  isExpanded={expandedEvent === event.id}
+                  onToggle={() =>
+                    setExpandedEvent(
+                      expandedEvent === event.id ? null : event.id
+                    )
+                  }
+                  onFeedback={submitFeedback}
+                />
+              ))}
             </div>
           )}
         </section>
 
-        {/* Right Panel — Agent Log */}
-        <aside className="w-80 border-l border-gray-800 p-5 flex flex-col shrink-0">
-          <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider mb-3">
-            Agent Log
-          </p>
-          <div className="flex-1 overflow-y-auto space-y-1.5 text-xs font-mono min-h-0">
-            {logs.slice(0, 50).map((entry, i) => (
-              <div
-                key={i}
-                className={`flex gap-2 leading-relaxed ${
-                  i === 0
-                    ? 'border-l-2 border-emerald-500 pl-2'
-                    : 'border-l-2 border-transparent pl-2'
-                }`}
-              >
-                <span className="text-gray-600 shrink-0">
-                  {formatTime(entry.timestamp)}
-                </span>
-                <span
-                  className={
-                    entry.type === 'error'
-                      ? 'text-red-400'
-                      : entry.type === 'success'
-                        ? 'text-emerald-400'
-                        : 'text-gray-400'
-                  }
-                >
-                  {entry.message}
-                </span>
-              </div>
-            ))}
-            {logs.length === 0 && (
-              <p className="text-gray-600 italic font-sans text-xs">
-                No activity yet.
-              </p>
-            )}
-          </div>
+        {/* Right Panel — Agent Log (desktop) */}
+        <aside className="hidden shrink-0 border-l border-border p-5 lg:flex lg:w-80 lg:flex-col">
+          <AgentLog logs={logs} />
         </aside>
+
+        {/* Mobile Agent Log Drawer */}
+        {showMobileLog && (
+          <div className="fixed inset-0 z-50 lg:hidden">
+            <div
+              className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+              onClick={() => setShowMobileLog(false)}
+            />
+            <div className="absolute bottom-0 left-0 right-0 max-h-[60vh] rounded-t-2xl border-t border-border bg-card p-5 animate-slide-in">
+              <div className="mb-4 flex items-center justify-between">
+                <p className="text-sm font-semibold text-foreground">
+                  Agent Log
+                </p>
+                <button
+                  onClick={() => setShowMobileLog(false)}
+                  className="focus-ring rounded-md p-1.5 text-muted-foreground hover:text-foreground"
+                  aria-label="Close agent log"
+                >
+                  <svg
+                    className="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </div>
+              <div className="overflow-y-auto" style={{ maxHeight: 'calc(60vh - 80px)' }}>
+                <AgentLog logs={logs} />
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

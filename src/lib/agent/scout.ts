@@ -161,7 +161,7 @@ function seedScout(businessName: string): ScoutResult {
     },
   ];
 
-  const idx = Math.floor(Math.random() * seedReviews.length);
+  const idx = nextScanIndex();
   return {
     reviews: [seedReviews[idx % seedReviews.length]],
     profileData: {
